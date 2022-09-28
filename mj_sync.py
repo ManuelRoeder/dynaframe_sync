@@ -6,6 +6,8 @@ import requests # request img from web
 import shutil
 
 from urllib.parse import urlparse
+from pathlib import Path
+
 from selenium.webdriver.support import expected_conditions as EC
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -54,7 +56,7 @@ def fit_text(img, text, color, font):
     width = img.size[0] - 2
     draw = ImageDraw.Draw(img, "RGBA")
     pieces = list(break_fix(text, width, font, draw))
-    draw_rec(img,draw,len(pieces))
+    draw_rec(img, draw, len(pieces))
     height = sum(p[2] for p in pieces)
     if height > img.size[1]:
         raise ValueError("text doesn't fit")
@@ -71,18 +73,39 @@ def draw_rec(img, draw, lines):
     layer_height = lines*35
     #draw = ImageDraw.Draw(img, "RGBA")
     draw.rectangle(((0, height - layer_height), (width, height)), fill=(0, 0, 0, 127))
-    draw.rectangle(((0, height - layer_height ), (width, height)), outline=(255, 255, 255, 127), width=3)
+    draw.rectangle(((0, height - layer_height), (width, height)), outline=(255, 255, 255, 127), width=3)
 
 
-def edit_image(dest, prompt):
+def edit_image(dest, prompt, args):
     img = Image.open(dest)
+    # check aspect ratio here
+    ar = img.size[0] / img.size[1]
+    if args.orientation == "portrait_only":
+        if ar > 1.0:
+            print("Skipping " + dest + " due to aspect ratio missmatch")
+            img.close()
+            os.remove(dest)
+            Path(dest).touch()
+            return
+    elif args.orientation == "landscape_only":
+        if ar <= 1.0:
+            print("Skipping " + dest + " due to aspect ratio missmatch")
+            img.close()
+            os.remove(dest)
+            Path(dest).touch()
+            return
+
     # text layer
     font = ImageFont.truetype("arial.ttf", 30)
-    fit_text(img,prompt,(255,255,255),font)
+    fit_text(img, prompt, (255, 255, 255), font)
 
     # save and quit
     #img.show()
-    img.save(dest)
+    img.save(dest + ".png")
+    img.close()
+
+    # remove tmp file
+    os.remove(dest)
 
 
 def download_elements(driver, args):
@@ -94,30 +117,30 @@ def download_elements(driver, args):
         if not parsed_url.hostname == "mj-gallery.com":
             continue
         alt_txt = child.get_attribute("alt")
-        print(alt_txt)
+        #print(alt_txt)
         split_var = src_link.split("/")
         id = split_var[3]
         download_link = QUERY_BASE + id + QUERY_END
-        dest = os.path.join(args.path, id + ".png")
-        if not os.path.exists(dest):
+        dest = os.path.join(args.path, id)
+        if not os.path.exists(dest) and not os.path.exists(dest + ".png"):
             r = requests.get(download_link)
             with open(dest, 'wb') as outfile:
                 outfile.write(r.content)
-            print("Downloaded file " + dest)
-            if args.show_prompts == 1:
-                edit_image(dest, alt_txt)
+            print("Downloaded new file " + dest)
+            edit_image(dest, alt_txt, args)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Midjourney Sync')
-    parser.add_argument('--path', type=str, default=DEFAULT_PATH, help="Path to your DynaFrame sync folder")
+    parser = argparse.ArgumentParser(description='MidJourney Sync Plugin')
+    parser.add_argument('--path', type=str, default=DEFAULT_PATH, help="Path to your DynaFrame playlist folder")
     parser.add_argument('--seconds', type=int, default=3600, help="Seconds between MJ gallery syncs")
     parser.add_argument('--headless', type=int, default=1)
     parser.add_argument("--gallery", type=str, default="recent", help="-recent- to sync recently viewed MJ gallery, -top- to sync to sync hot list")
     parser.add_argument('--show_prompts', type=int, default=1, help="Enable to merge MJ text prompts into the image")
+    parser.add_argument("--orientation", type=str, default="portrait_only", help="Screen orientation to sort images by aspect ratio, -portrait_only- or -landscape_only- or -all-")
     args = parser.parse_args()
 
-    # configure chrome
+    # configure chrome, spoofing mobile device to get access to full resolution images
     mobile_emulation = {"deviceName": "Pixel 2"}
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_experimental_option("mobileEmulation", mobile_emulation)
@@ -130,7 +153,7 @@ def main():
     driver = webdriver.Chrome(options=chrome_options)
     driver.implicitly_wait(5)
 
-    # check if dir exists
+    # check if dir exists on startup
     if os.path.isdir(args.path):
         print("Removing existing MJ dir")
         shutil.rmtree(args.path)
@@ -141,7 +164,7 @@ def main():
         try:
             # Setting UserAgent as Chrome/83.0.4103.97
             #driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko)  Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36'})
-            # visit team url
+            # visit MJ url
             driver.get(MIDJOURNEY_SHOWCASE)
 
             if args.gallery == "top":
@@ -150,14 +173,16 @@ def main():
 
             #print(driver.execute_script("return navigator.userAgent;"))
 
+            # ugly: download first batch of images
             download_elements(driver, args)
 
-            print("Scroll shim")
+            # scroll shim
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             html = driver.find_element(By.TAG_NAME, 'html')
             html.send_keys(Keys.END)
             time.sleep(10)
 
+            # ugly: download remaining images
             download_elements(driver, args)
 
         except KeyboardInterrupt:
@@ -167,7 +192,7 @@ def main():
         except Exception as e:
             print("Exception raised. No updates. Message: " + str(e))
 
-        print("Finish dl round")
+        print("Finish synchronization round, next update in " + str(args.seconds) + " seconds")
         time.sleep(args.seconds)
     driver.quit()
 

@@ -24,6 +24,7 @@ Parameters are:
 - headless, used for debugging. Defaults to True
 - gallery, MJ gallery to fetch from: "top" or "recent". Defaults to "recent"
 - show_prompts, Merge the text prompt into the image
+- orientation, define the image aspect ratio to show: "portrait_only", "landscape_only", "all". Defaults to "portrait_only"
 
 The sync is implemented to first check for, wipe and recreate the "path" directory. 
 New images are added to the "path" dir from the given MJ gallery.
