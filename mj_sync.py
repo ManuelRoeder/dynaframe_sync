@@ -108,7 +108,7 @@ def edit_image(dest, prompt, args):
     os.remove(dest)
 
 
-def download_elements(driver, args):
+def download_elements(driver, gallery_dict, args):
     elements = driver.find_elements(By.TAG_NAME, 'img')
     WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.TAG_NAME, "img")))
     for child in elements:
@@ -122,12 +122,49 @@ def download_elements(driver, args):
         id = split_var[3]
         download_link = QUERY_BASE + id + QUERY_END
         dest = os.path.join(args.path, id)
-        if not os.path.exists(dest) and not os.path.exists(dest + ".png"):
-            r = requests.get(download_link)
-            with open(dest, 'wb') as outfile:
-                outfile.write(r.content)
-            print("Downloaded new file " + dest)
-            edit_image(dest, alt_txt, args)
+
+        # check if image is present in gallery
+        if id in gallery_dict.keys():
+            if os.path.exists(dest) or os.path.exists(dest + ".png"):
+                print("Image id " + id + " is already available in gallery")
+                # set sync flag to True
+                tmp_list = list(gallery_dict[id])
+                tmp_list[0] = 1
+                gallery_dict[id] = tuple(tmp_list)
+                continue
+
+        # download and bookmark image
+        r = requests.get(download_link)
+        with open(dest, 'wb') as outfile:
+            outfile.write(r.content)
+        print("Downloaded new file " + dest)
+        # edit the image if needed
+        edit_image(dest, alt_txt, args)
+        # add new entry with sync flag enabled
+        gallery_dict[id] = (1, dest)
+
+
+def set_sync_flag(gallery_dict):
+    for key in gallery_dict:
+        tmp_list = list(gallery_dict[key])
+        tmp_list[0] = 0
+        gallery_dict[key] = tuple(tmp_list)
+
+
+def evaluate_sync_flag(gallery_dict, old_dict_size):
+    deletion_list = list()
+    for key in gallery_dict:
+        if gallery_dict[key][0] == 0:
+            if os.path.exists(gallery_dict[key][1]):
+                os.remove(gallery_dict[key][1])
+            elif os.path.exists(gallery_dict[key][1] + ".png"):
+                os.remove(gallery_dict[key][1] + ".png")
+            deletion_list.append(key)
+    # cleanup
+    for idx in deletion_list:
+        del gallery_dict[idx]
+
+    print("Pre-fetch dict size: " + str(old_dict_size) + ", new dict size: " + str(len(gallery_dict)) + ", deleted entries: " + str(len(deletion_list)))
 
 
 def main():
@@ -160,6 +197,10 @@ def main():
     print("Creating new MJ dir")
     os.mkdir(args.path)
 
+    # create bookkeeping dict
+    # structure: id, (flag, path)
+    gallery_dict = dict()
+
     while True:
         try:
             # Setting UserAgent as Chrome/83.0.4103.97
@@ -173,17 +214,23 @@ def main():
 
             #print(driver.execute_script("return navigator.userAgent;"))
 
+            # reset sync flag of image gallery
+            set_sync_flag(gallery_dict)
+            old_dict_size = len(gallery_dict)
+
             # ugly: download first batch of images
-            download_elements(driver, args)
+            download_elements(driver, gallery_dict, args)
 
             # scroll shim
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             html = driver.find_element(By.TAG_NAME, 'html')
             html.send_keys(Keys.END)
-            time.sleep(10)
+            time.sleep(20)
 
             # ugly: download remaining images
-            download_elements(driver, args)
+            download_elements(driver, gallery_dict, args)
+
+            evaluate_sync_flag(gallery_dict, old_dict_size)
 
         except KeyboardInterrupt:
             print("Exiting via KB")
