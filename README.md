@@ -7,6 +7,8 @@ The images are obtained in full resolution.
 
 **!!!!!!!! NO MIDJOURNEY ACCOUNT OR SUBSCRIPTION PLAN  REQUIRED !!!!!!!!**
 
+![trans](https://user-images.githubusercontent.com/9356580/194281084-0dd5a3b8-9ba6-44c9-b6a7-9ae41e4cbe7b.gif)
+
 ## Prerequisites:
 Raspberry Pi 3B+ or better
 
