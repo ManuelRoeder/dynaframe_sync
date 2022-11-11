@@ -24,9 +24,11 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 MIDJOURNEY_SHOWCASE = "https://www.midjourney.com/showcase/"
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko)  Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36'
 DATA_DIR = "data/"
-QUERY_BASE = "https://mj-gallery.com/"
 QUERY_END = "/grid_0.png"
 DEFAULT_PATH = "/home/pi/Pictures/Midjourney"
+
+IMAGE_DB_BASE_OPT1 = "mj-gallery.com"
+IMAGE_DB_BASE_OPT2 = "cdn.midjourney.com"
 
 TINT_COLOR = (0, 0, 0)  # Black
 TRANSPARENCY = .25  # Degree of transparency, 0-100%
@@ -114,17 +116,23 @@ def download_elements(driver, gallery_dict, args):
     for child in elements:
         src_link = child.get_attribute("src")
         parsed_url = urlparse(src_link)
-        if not parsed_url.hostname == "mj-gallery.com":
+        if parsed_url.hostname == IMAGE_DB_BASE_OPT1:
+            query_base = "https://" + IMAGE_DB_BASE_OPT1 + "/"
+        elif parsed_url.hostname == IMAGE_DB_BASE_OPT2:
+            query_base = "https://" + IMAGE_DB_BASE_OPT2 + "/"
+        else:
             continue
         alt_txt = child.get_attribute("alt")
         #print(alt_txt)
         split_var = src_link.split("/")
         id = split_var[3]
-        download_link = QUERY_BASE + id + QUERY_END
+        download_link = query_base + id + QUERY_END
         dest = os.path.join(args.path, id)
 
         # check if image is present in gallery
         if id in gallery_dict.keys():
+            if args.sync == 0:
+                continue
             if os.path.exists(dest) or os.path.exists(dest + ".png"):
                 print("Image id " + id + " is already available in gallery")
                 # set sync flag to True
@@ -167,6 +175,19 @@ def evaluate_sync_flag(gallery_dict, old_dict_size):
     print("Pre-fetch dict size: " + str(old_dict_size) + ", new dict size: " + str(len(gallery_dict)) + ", deleted entries: " + str(len(deletion_list)))
 
 
+def scan_folder(path):
+    gallery_dict = dict()
+    import os
+    for file in os.listdir(path):
+        if file.endswith(".png"):
+            split_list = file.split(".")
+            id = split_list[0]
+        else:
+            id = file
+        gallery_dict[id] = (1, os.path.join(path, id))
+    return gallery_dict
+
+
 def main():
     parser = argparse.ArgumentParser(description='MidJourney Sync Plugin')
     parser.add_argument('--path', type=str, default=DEFAULT_PATH, help="Path to your DynaFrame playlist folder")
@@ -174,6 +195,7 @@ def main():
     parser.add_argument('--headless', type=int, default=1)
     parser.add_argument("--gallery", type=str, default="recent", help="-recent- to sync recently viewed MJ gallery, -top- to sync to sync hot list")
     parser.add_argument('--show_prompts', type=int, default=1, help="Enable to merge MJ text prompts into the image")
+    parser.add_argument('--sync', type=int, default=1, help="Delete local images that are not available online if enabled, just add new images otherwise. User has to track memory usage.")
     parser.add_argument("--orientation", type=str, default="portrait_only", help="Screen orientation to sort images by aspect ratio, -portrait_only- or -landscape_only- or -all-")
     args = parser.parse_args()
 
@@ -191,15 +213,27 @@ def main():
     driver.implicitly_wait(5)
 
     # check if dir exists on startup
-    if os.path.isdir(args.path):
-        print("Removing existing MJ dir")
-        shutil.rmtree(args.path)
-    print("Creating new MJ dir")
-    os.mkdir(args.path)
 
-    # create bookkeeping dict
-    # structure: id, (flag, path)
-    gallery_dict = dict()
+    if args.sync == 1:
+        print("Sync flag enabled")
+        if os.path.isdir(args.path):
+            print("Removing existing MJ dir")
+            shutil.rmtree(args.path)
+        print("Creating new MJ dir")
+        os.mkdir(args.path)
+        # create bookkeeping dict
+        # structure: id, (flag, path)
+        gallery_dict = dict()
+    else:
+        print("Sync flag disabled, please keep track of your storage capacities")
+        if os.path.isdir(args.path):
+            gallery_dict = scan_folder(args.path)
+        else:
+            print("Creating new MJ dir")
+            os.mkdir(args.path)
+            # create bookkeeping dict
+            # structure: id, (flag, path)
+            gallery_dict = dict()
 
     while True:
         try:
@@ -208,14 +242,18 @@ def main():
             # visit MJ url
             driver.get(MIDJOURNEY_SHOWCASE)
 
+            # give driver time to reload the page
+            time.sleep(10)
+
             if args.gallery == "top":
                 # find and press recent button
                 driver.find_element("xpath", "/html/body/div[1]/div[1]/div[2]/div/div[2]/div/div/div/button[2]").click()
 
             #print(driver.execute_script("return navigator.userAgent;"))
 
-            # reset sync flag of image gallery
-            set_sync_flag(gallery_dict)
+            if args.sync == 1:
+                # reset sync flag of image gallery
+                set_sync_flag(gallery_dict)
             old_dict_size = len(gallery_dict)
 
             # ugly: download first batch of images
@@ -225,12 +263,13 @@ def main():
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             html = driver.find_element(By.TAG_NAME, 'html')
             html.send_keys(Keys.END)
-            time.sleep(20)
+            time.sleep(10)
 
             # ugly: download remaining images
             download_elements(driver, gallery_dict, args)
 
-            evaluate_sync_flag(gallery_dict, old_dict_size)
+            if args.sync == 1:
+                evaluate_sync_flag(gallery_dict, old_dict_size)
 
         except KeyboardInterrupt:
             print("Exiting via KB")
