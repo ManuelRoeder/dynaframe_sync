@@ -34,6 +34,8 @@ TINT_COLOR = (0, 0, 0)  # Black
 TRANSPARENCY = .25  # Degree of transparency, 0-100%
 OPACITY = int(255 * TRANSPARENCY)
 
+QR_CODE_SIZE = 200
+
 
 def break_fix(text, width, font, draw):
     if not text:
@@ -54,11 +56,11 @@ def break_fix(text, width, font, draw):
     yield from break_fix(text[lo:], width, font, draw)
 
 
-def fit_text(img, text, color, font):
+def fit_text(img, text, color, font, url):
     width = img.size[0] - 2
     draw = ImageDraw.Draw(img, "RGBA")
     pieces = list(break_fix(text, width, font, draw))
-    draw_rec(img, draw, len(pieces))
+    draw_rec(img, draw, len(pieces), url)
     height = sum(p[2] for p in pieces)
     if height > img.size[1]:
         raise ValueError("text doesn't fit")
@@ -69,7 +71,7 @@ def fit_text(img, text, color, font):
         y += h
 
 
-def draw_rec(img, draw, lines):
+def draw_rec(img, draw, lines, url):
     width, height = img.size
     # transparent layer
     layer_height = lines*35
@@ -77,8 +79,30 @@ def draw_rec(img, draw, lines):
     draw.rectangle(((0, height - layer_height), (width, height)), fill=(0, 0, 0, 127))
     draw.rectangle(((0, height - layer_height), (width, height)), outline=(255, 255, 255, 127), width=3)
 
+    # qr code
+    if url is not None:
+        try:
+            import qrcode
+        except ImportError:
+            print("qrcode lib not found")
+            return
+        # Creating an instance of qrcode
+        qr = qrcode.QRCode(
+            version=1,
+            box_size=10,
+            border=5)
+        qr.add_data(url)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color='white', back_color='transparent')
+        newsize = (QR_CODE_SIZE, QR_CODE_SIZE)
+        qr_img = qr_img.resize(newsize)
+        qr_width, qr_height = qr_img.size
+        draw.rectangle(((width - qr_width, 0), (width, qr_height)), fill=(0, 0, 0, 127))
+        draw.rectangle(((width - qr_width, 0), (width, qr_height)), outline=(255, 255, 255, 127), width=3)
+        img.paste(qr_img, (width - qr_width, 0), qr_img.convert('RGBA'))
 
-def edit_image(dest, prompt, args):
+
+def edit_image(dest, prompt, url, args):
     img = Image.open(dest)
     # check aspect ratio here
     ar = img.size[0] / img.size[1]
@@ -99,7 +123,7 @@ def edit_image(dest, prompt, args):
 
     # text layer
     font = ImageFont.truetype("arial.ttf", 30)
-    fit_text(img, prompt, (255, 255, 255), font)
+    fit_text(img, prompt, (255, 255, 255), font, url if args.qr == 1 else None)
 
     # save and quit
     #img.show()
@@ -147,7 +171,7 @@ def download_elements(driver, gallery_dict, args):
             outfile.write(r.content)
         print("Downloaded new file " + dest)
         # edit the image if needed
-        edit_image(dest, alt_txt, args)
+        edit_image(dest, alt_txt, download_link, args)
         # add new entry with sync flag enabled
         gallery_dict[id] = (1, dest)
 
@@ -196,6 +220,7 @@ def main():
     parser.add_argument("--gallery", type=str, default="recent", help="-recent- to sync recently viewed MJ gallery, -top- to sync to sync hot list")
     parser.add_argument('--show_prompts', type=int, default=1, help="Enable to merge MJ text prompts into the image")
     parser.add_argument('--sync', type=int, default=1, help="Delete local images that are not available online if enabled, just add new images otherwise. User has to track memory usage.")
+    parser.add_argument('--qr', type=int, default=0, help="Adds a QR code with the download link to the current image. Requires qrcode pip package installed")
     parser.add_argument("--orientation", type=str, default="portrait_only", help="Screen orientation to sort images by aspect ratio, -portrait_only- or -landscape_only- or -all-")
     args = parser.parse_args()
 

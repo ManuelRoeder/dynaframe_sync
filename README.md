@@ -33,6 +33,7 @@ Parameters are:
 - show_prompts, Merge the text prompt into the image
 - orientation, define the image aspect ratio to show: "portrait_only", "landscape_only", "all". Defaults to "portrait_only"
 - sync, delete local images that are not available online if enabled, just add new images otherwise. User has to track memory usage.
+- qr, generate and show the qr code of the image source for easy download
 
 The sync is implemented to first check for, wipe and recreate the "path" directory. 
 New images are added to the "path" dir from the given MJ gallery.
@@ -55,8 +56,7 @@ Finally add the job to start the script 60 seconds after boot:
 @reboot sleep 60 && /path/to/your/python /bin/mj_sync.py --gallery="hot" &
 ```
 ## Preview
-Images with corresponding text prompts
-![61511e6d-a0e6-4fae-8080-063a56d82695](https://user-images.githubusercontent.com/9356580/192499530-07d73299-ab72-4a66-a58c-b35518bc7e54.png)
+Images with corresponding text prompts and QR code
+![6f363734-180b-4c75-9adc-99d391fb31cc](https://user-images.githubusercontent.com/9356580/201767692-a7dc047c-cec4-4195-ac0f-c149374276b1.png)
 
-
-![e3751829-978d-4f86-84bf-0127118c3c1e](https://user-images.githubusercontent.com/9356580/192499563-1b51840e-f9a0-4621-9797-389be02ff494.png)
+![bb9255f4-a584-4c85-b3a5-26a9e93b0673](https://user-images.githubusercontent.com/9356580/201767932-ae76732a-a9d2-46da-8373-1c43aca4f58a.png)
