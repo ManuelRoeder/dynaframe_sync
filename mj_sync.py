@@ -8,6 +8,8 @@ import shutil
 from urllib.parse import urlparse
 from pathlib import Path
 
+from io import BytesIO
+
 from selenium.webdriver.support import expected_conditions as EC
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -30,11 +32,28 @@ DEFAULT_PATH = "/home/pi/Pictures/Midjourney"
 IMAGE_DB_BASE_OPT1 = "mj-gallery.com"
 IMAGE_DB_BASE_OPT2 = "cdn.midjourney.com"
 
+MJ_ICON_URL = "https://avatars.githubusercontent.com/u/61396273"
+MJ_ICON_NAME = "mj.png"
+
 TINT_COLOR = (0, 0, 0)  # Black
 TRANSPARENCY = .25  # Degree of transparency, 0-100%
 OPACITY = int(255 * TRANSPARENCY)
 
 QR_CODE_SIZE = 200
+
+# fetch MJ icon
+MJ_ICON_IMAGE = None
+try:
+    r = requests.get(MJ_ICON_URL)
+    MJ_ICON_IMAGE = Image.open(BytesIO(r.content)).convert('RGBA')
+    newsize = (int(QR_CODE_SIZE/5), int(QR_CODE_SIZE/5))
+    MJ_ICON_IMAGE = MJ_ICON_IMAGE.resize(newsize, Image.ANTIALIAS)
+    draw = ImageDraw.Draw(MJ_ICON_IMAGE, "RGBA")
+    draw.rectangle(((0, 0), (MJ_ICON_IMAGE.size[0], MJ_ICON_IMAGE.size[1])), outline=(255, 255, 255, 0), width=2)
+    #MJ_ICON_IMAGE.show()
+except Exception as e:
+    print("Could not obtain MJ icon")
+    del MJ_ICON_IMAGE
 
 
 def break_fix(text, width, font, draw):
@@ -56,11 +75,13 @@ def break_fix(text, width, font, draw):
     yield from break_fix(text[lo:], width, font, draw)
 
 
-def fit_text(img, text, color, font, url):
+def fit_text(img, text, color, font, url, show_prompt):
     width = img.size[0] - 2
     draw = ImageDraw.Draw(img, "RGBA")
     pieces = list(break_fix(text, width, font, draw))
-    draw_rec(img, draw, len(pieces), url)
+    draw_rec(img, draw, len(pieces), url, show_prompt)
+    if show_prompt == 0:
+        return
     height = sum(p[2] for p in pieces)
     if height > img.size[1]:
         raise ValueError("text doesn't fit")
@@ -71,13 +92,15 @@ def fit_text(img, text, color, font, url):
         y += h
 
 
-def draw_rec(img, draw, lines, url):
+def draw_rec(img, draw, lines, url, show_prompt):
     width, height = img.size
-    # transparent layer
-    layer_height = lines*35
-    #draw = ImageDraw.Draw(img, "RGBA")
-    draw.rectangle(((0, height - layer_height), (width, height)), fill=(0, 0, 0, 127))
-    draw.rectangle(((0, height - layer_height), (width, height)), outline=(255, 255, 255, 127), width=3)
+
+    if show_prompt == 1:
+        # transparent layer
+        layer_height = lines*35
+        #draw = ImageDraw.Draw(img, "RGBA")
+        draw.rectangle(((0, height - layer_height), (width, height)), fill=(0, 0, 0, 127))
+        draw.rectangle(((0, height - layer_height), (width, height)), outline=(255, 255, 255, 127), width=3)
 
     # qr code
     if url is not None:
@@ -86,6 +109,7 @@ def draw_rec(img, draw, lines, url):
         except ImportError:
             print("qrcode lib not found")
             return
+
         # Creating an instance of qrcode
         qr = qrcode.QRCode(
             version=1,
@@ -97,6 +121,11 @@ def draw_rec(img, draw, lines, url):
         newsize = (QR_CODE_SIZE, QR_CODE_SIZE)
         qr_img = qr_img.resize(newsize)
         qr_width, qr_height = qr_img.size
+        if MJ_ICON_IMAGE is not None:
+            # set size of QR code
+            pos = ((qr_img.size[0] - MJ_ICON_IMAGE.size[0]) // 2,
+                   (qr_img.size[1] - MJ_ICON_IMAGE.size[1]) // 2)
+            qr_img.paste(MJ_ICON_IMAGE, pos)
         draw.rectangle(((width - qr_width, 0), (width, qr_height)), fill=(0, 0, 0, 127))
         draw.rectangle(((width - qr_width, 0), (width, qr_height)), outline=(255, 255, 255, 127), width=3)
         img.paste(qr_img, (width - qr_width, 0), qr_img.convert('RGBA'))
@@ -123,7 +152,7 @@ def edit_image(dest, prompt, url, args):
 
     # text layer
     font = ImageFont.truetype("arial.ttf", 30)
-    fit_text(img, prompt, (255, 255, 255), font, url if args.qr == 1 else None)
+    fit_text(img, prompt, (255, 255, 255), font, url if args.qr == 1 else None, args.show_prompts)
 
     # save and quit
     #img.show()
