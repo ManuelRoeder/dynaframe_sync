@@ -24,6 +24,8 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 MIDJOURNEY_SHOWCASE = "https://www.midjourney.com/showcase/"
+MJ_SC_TOP = MIDJOURNEY_SHOWCASE + "top/"
+MJ_SC_RECENT = MIDJOURNEY_SHOWCASE + "recent/"
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko)  Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36'
 DATA_DIR = "data/"
 QUERY_END = "/grid_0.png"
@@ -289,21 +291,17 @@ def main():
             # structure: id, (flag, path)
             gallery_dict = dict()
 
+    target_url = MJ_SC_TOP if args.gallery == "top" else MIDJOURNEY_SHOWCASE
+
     while True:
         try:
             # Setting UserAgent as Chrome/83.0.4103.97
             #driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko)  Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36'})
             # visit MJ url
-            driver.get(MIDJOURNEY_SHOWCASE)
+            driver.get(target_url)
 
             # give driver time to reload the page
             time.sleep(10)
-
-            if args.gallery == "top":
-                # find and press recent button
-                driver.find_element("xpath", "/html/body/div[1]/div[1]/div[2]/div/div[2]/div/div/div/button[2]").click()
-
-            #print(driver.execute_script("return navigator.userAgent;"))
 
             if args.sync == 1:
                 # reset sync flag of image gallery
